@@ -1,4 +1,4 @@
-name: Build Android Native Binaries
+name: Build PQC Native for Android
 
 on:
   push:
@@ -11,16 +11,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: سحب الكود من المستودع
         uses: actions/checkout@v4
 
-      - name: Setup Android NDK
+      - name: تجهيز أدوات الـ NDK للأندرويد
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
           ndk-version: r25c
 
-      - name: Download & Setup OpenSSL for Android (arm64-v8a)
+      - name: جلب وبناء مكتبة liboqs للأندرويد (arm64-v8a)
+        run: |
+          git clone --depth=1 https://github.com/open-quantum-safe/liboqs.git
+          
+          # بناء liboqs مع تخصيصها لمعمارية الأندرويد عبر الـ Toolchain
+          cmake -S liboqs -B liboqs/build \
+            -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DOQS_BUILD_ONLY_LIB=ON \
+            -DCMAKE_BUILD_TYPE=Release
+            
+          cmake --build liboqs/build --parallel $(nproc)
+
+      - name: جلب وتجهيز OpenSSL للأندرويد
         run: |
           git clone https://github.com/KDAB/android_openssl.git $GITHUB_WORKSPACE/android_openssl
           mkdir -p $GITHUB_WORKSPACE/openssl_arm64/lib
@@ -30,29 +45,23 @@ jobs:
           ln -sf libcrypto_3.so libcrypto.so
           ln -sf libssl_3.so libssl.so
 
-      - name: Configure CMake
+      - name: تكوين وبناء مشروعك (CMake)
         run: |
           mkdir build && cd build
           cmake .. \
             -DCMAKE_TOOLCHAIN_FILE=${{ steps.setup-ndk.outputs.ndk-path }}/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-24 \
-            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
-            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -DOQS_ROOT_DIR=$GITHUB_WORKSPACE/liboqs/build \
             -DOPENSSL_ROOT_DIR=$GITHUB_WORKSPACE/openssl_arm64 \
-            -DOPENSSL_INCLUDE_DIR=$GITHUB_WORKSPACE/openssl_arm64/include \
-            -DOPENSSL_CRYPTO_LIBRARY=$GITHUB_WORKSPACE/openssl_arm64/lib/libcrypto_3.so \
-            -DOPENSSL_SSL_LIBRARY=$GITHUB_WORKSPACE/openssl_arm64/lib/libssl_3.so
+            -DCMAKE_BUILD_TYPE=Release
+            
+          cmake --build . --parallel $(nproc)
 
-      - name: Build Project
-        run: |
-          cd build
-          make -j$(nproc)
-
-      - name: Upload Artifacts
+      - name: ضغط النواتج ورفعها كـ Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-arm64-v8a-binary
-          path: build/
-
+          name: pqc-android-arm64-binary
+          path: |
+            build/pqc_tool
+            build/libpqc_crypto.a
