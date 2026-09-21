@@ -8,27 +8,52 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# متغّير حتى تدلي الـ CMake على مسار liboqs إذا جانت بمكان مخصص
+set(OQS_ROOT_DIR "" CACHE PATH "مسار مجلد مكتبة liboqs")
+
+# البحث عن مكتبة OpenSSL
 find_package(OpenSSL REQUIRED)
 
-find_path(OQS_INCLUDE_DIR oqs/oqs.h)
-find_library(OQS_LIBRARY NAMES oqs liboqs)
+# البحث عن ملف الترويسة مع تدلية النظام على المسارات المحتملة
+find_path(OQS_INCLUDE_DIR
+    NAMES oqs/oqs.h
+    HINTS
+        ${OQS_ROOT_DIR}/include
+        ${CMAKE_SOURCE_DIR}/libs/liboqs/include
+        ${CMAKE_SOURCE_DIR}/third_party/liboqs/include
+)
+
+# البحث عن ملف المكتبة المبنّية (lib/lib64)
+find_library(OQS_LIBRARY
+    NAMES oqs liboqs
+    HINTS
+        ${OQS_ROOT_DIR}/lib
+        ${OQS_ROOT_DIR}/lib64
+        ${CMAKE_SOURCE_DIR}/libs/liboqs/lib
+        ${CMAKE_SOURCE_DIR}/third_party/liboqs/lib
+)
 
 if(NOT OQS_INCLUDE_DIR OR NOT OQS_LIBRARY)
     message(FATAL_ERROR
-        "لم يتم العثور على مكتبة liboqs على النظام.\n"
-        "ثبّتها أولاً (راجع README.md لتعليمات كاملة)، باختصار:\n"
-        "  git clone --depth=1 https://github.com/open-quantum-safe/liboqs\n"
-        "  cmake -S liboqs -B liboqs/build -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release\n"
-        "  cmake --build liboqs/build --parallel\n"
-        "  sudo cmake --install liboqs/build\n"
-        "  sudo ldconfig")
+        "جا وين المكتبة؟ ما لقينا liboqs!\n"
+        "ثبتها بالنظام، أو انطي المسار المباشر وانت تبني بـ CMake مثل هيج:\n"
+        "  cmake -B build -DOQS_ROOT_DIR=/مسار/مكتبتك/liboqs\n"
+        "أو انسخ ملفات المكتبة وحطها داخل مجلد libs/liboqs بمشروعك.")
 endif()
 
 add_library(pqc_crypto
     src/pqc_crypto.cpp
 )
-target_include_directories(pqc_crypto PUBLIC include ${OQS_INCLUDE_DIR})
-target_link_libraries(pqc_crypto PUBLIC ${OQS_LIBRARY} OpenSSL::Crypto)
+
+target_include_directories(pqc_crypto PUBLIC 
+    include 
+    ${OQS_INCLUDE_DIR}
+)
+
+target_link_libraries(pqc_crypto PUBLIC 
+    ${OQS_LIBRARY} 
+    OpenSSL::Crypto
+)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(pqc_crypto PRIVATE -O2)
